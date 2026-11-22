@@ -1,0 +1,2 @@
+https://github.com/myname720/test/archive/refs/heads/main.zip
+https://ghproxy.com/https://github.com/myname720/test/archive/refs/heads/main.zip
