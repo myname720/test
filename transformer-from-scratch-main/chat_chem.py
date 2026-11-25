@@ -17,10 +17,13 @@ model = GPT(model_config, rng=np.random.default_rng(42))
 for p, loaded_p in zip(model.params_and_grads(), state["params"]):
     p[0][:] = loaded_p
 
-# 重点：重新构建词表（和训练时一模一样的chem.txt）
-with open("chem.txt", "r", encoding="utf-8") as f:
-    train_text = f.read()
-stoi, itos = build_vocab(train_text)
+# 直接读取训练时保存的词表，不再重新构建
+vocab_path = ROOT / "checkpoints" / "vocab.pkl"
+with vocab_path.open("rb") as f:
+    vocab_data = pickle.load(f)
+stoi = vocab_data["stoi"]
+itos = vocab_data["itos"]
+
 
 print("✅ 化学小模型加载完成！")
 print("👉 提问模板示例：问：燃烧的三个条件是什么？答：")

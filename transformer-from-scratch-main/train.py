@@ -36,15 +36,16 @@ def save_checkpoint(model: GPT, path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--resume", type=str, default="", help="续训，填写checkpoints/final.pkl")
     parser.add_argument("--d-model", type=int, default=64)
     parser.add_argument("--n-heads", type=int, default=4)
     parser.add_argument("--n-layers", type=int, default=4)
     parser.add_argument("--block-size", type=int, default=24)
     parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--steps", type=int, default=10000)
+    parser.add_argument("--steps", type=int, default=100)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--log-every", type=int, default=10)
+    parser.add_argument("--log-every", type=int, default=1)
     parser.add_argument("--prompt", type=str, default="ROMEO:")
     parser.add_argument("--sample-tokens", type=int, default=300)
     parser.add_argument("--temperature", type=float, default=0.8)
@@ -66,9 +67,31 @@ def main() -> None:
         n_layers=args.n_layers,
         block_size=args.block_size,
     )
-    model = GPT(config, rng=rng)
+    if args.resume != "":
+        # 断点续训模式：加载旧的checkpoint
+        ckpt_resume = Path(args.resume)
+        with ckpt_resume.open("rb") as f:
+            state_old = pickle.load(f)
+        # 校验：现在的config必须和保存的config完全一致！
+        old_cfg = state_old["config"]
+        assert old_cfg.vocab_size == config.vocab_size, "❌词表大小变了！不能续训"
+        assert old_cfg.d_model == config.d_model, "❌d-model参数不一致"
+        assert old_cfg.n_heads == config.n_heads, "❌n-heads参数不一致"
+        assert old_cfg.n_layers == config.n_layers, "❌n-layers参数不一致"
+        assert old_cfg.block_size == config.block_size, "❌block-size参数不一致"
+
+        model = GPT(config, rng=rng)
+        # 把旧权重赋值进模型
+        for p, loaded_p in zip(model.params_and_grads(), state_old["params"]):
+            p[0][:] = loaded_p
+        print(f"✅ 成功加载断点 {args.resume}，继续训练！")
+    else:
+        # 普通从头训练
+        model = GPT(config, rng=rng)
+    
     print(f"Model: d={config.d_model}, H={config.n_heads}, L={config.n_layers}, "
-          f"params={parameter_count(model):,}")
+        f"params={parameter_count(model):,}")
+
     print(f"Training {args.steps} steps at lr={args.lr}, batch={args.batch_size}\n")
 
     history = train(
@@ -84,6 +107,12 @@ def main() -> None:
 
     print(f"\nSaving checkpoint -> checkpoints/final.pkl")
     save_checkpoint(model, CKPT_DIR / "final.pkl")
+    # =====新增，保存训练时真实的词表=====
+    vocab_save_path = CKPT_DIR / "vocab.pkl"
+    with vocab_save_path.open("wb") as f:
+        pickle.dump({"stoi":stoi, "itos":itos}, f)
+    print(f"✅ 词表已保存到 {vocab_save_path}")
+
 
     print(f"\nGenerating samples (temperature={args.temperature}, top_k=40)...")
     SAMPLES_DIR.mkdir(exist_ok=True)
